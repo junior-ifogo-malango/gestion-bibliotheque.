@@ -1,0 +1,6 @@
+{
+  "name": "BiblioPrêt - Gestion des Emprunts de Bibliothèque",
+  "description": "Application complète de gestion des prêts, retours, catalogue de livres et adhérents pour bibliothèque et médiathèque.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
