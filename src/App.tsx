@@ -7,6 +7,8 @@ import React from 'react';
 import { LibraryProvider, useLibrary } from './context/LibraryContext';
 import { Navbar } from './components/Navbar';
 import { StudentCatalogView } from './components/StudentCatalogView';
+import { StudentWelcomeView } from './components/StudentWelcomeView';
+import { lireEtudiantConnecte, seDeconnecter, ConnectedStudent } from './services/authService';
 import { DashboardView } from './components/DashboardView';
 import { LoansView } from './components/LoansView';
 import { BooksView } from './components/BooksView';
@@ -48,6 +50,19 @@ const MainManagerContent: React.FC = () => {
 };
 
 const RootView: React.FC = () => {
+  const [connectedStudent, setConnectedStudent] = React.useState<ConnectedStudent | null>(() => {
+    return lireEtudiantConnecte();
+  });
+
+  const handleStudentLogout = () => {
+    seDeconnecter();
+    setConnectedStudent(null);
+  };
+
+  const handleStudentLoginSuccess = (student: ConnectedStudent) => {
+    setConnectedStudent(student);
+  };
+
   const { 
     userRole, 
     isQRScannerOpen, 
@@ -78,9 +93,21 @@ const RootView: React.FC = () => {
   };
 
   if (userRole === 'student') {
+    if (!connectedStudent) {
+      return (
+        <>
+          <StudentWelcomeView onLoginSuccess={handleStudentLoginSuccess} />
+          <ManagerLoginModal />
+        </>
+      );
+    }
+
     return (
       <>
-        <StudentCatalogView />
+        <StudentCatalogView 
+          currentStudent={connectedStudent} 
+          onLogout={handleStudentLogout} 
+        />
         <ManagerLoginModal />
       </>
     );

@@ -8,8 +8,7 @@
 
 ## RÔLES
 - Gestionnaire : connexion simple, un seul compte.
-- Étudiant :
-  - Catalogue étudiant : la grille montre pour chaque ouvrage seulement la page de couverture et, en dessous, « Tiroir X · Rangée Y » (plus « Indisponible » en gris si aucun exemplaire n'est disponible). Auteur, éditeur, année, catégorie, résumé, sommaire, « Disponible » et « Consultation sur place uniquement » apparaissent uniquement dans le pop-up au clic. Recherche par mots-clés, filtres, tri et pagination (12 par page) inchangés. Cette règle remplace toute description antérieure de l'affichage étudiant.
+- Étudiant : accède à l'application avec son compte Google académique (aucun mot de passe géré par l'application), puis consulte le catalogue en lecture seule. Accès accordé seulement si l'e-mail du compte correspond à l'emailAcademique d'un adhérent actif de la liste importée.
 
 ## DONNÉES
 - Ouvrage : isbn, titre, auteur, editeur, anneeEdition, categorie, cote, resume, coverUrl, sommaire, empruntable (faux = consultation sur place uniquement).

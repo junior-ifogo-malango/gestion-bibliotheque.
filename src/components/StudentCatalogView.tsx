@@ -11,10 +11,12 @@ import {
   ChevronLeft,
   ChevronRight,
   SlidersHorizontal,
-  RotateCcw
+  RotateCcw,
+  LogOut
 } from 'lucide-react';
 import { useLibrary } from '../context/LibraryContext';
 import { Ouvrage } from '../types';
+import { ConnectedStudent } from '../services/authService';
 
 interface StudentGridCoverProps {
   titre: string;
@@ -139,7 +141,15 @@ const SORT_LABELS: Record<string, string> = {
   'cote-asc': 'Cote'
 };
 
-export const StudentCatalogView: React.FC = () => {
+interface StudentCatalogViewProps {
+  currentStudent?: ConnectedStudent | null;
+  onLogout?: () => void;
+}
+
+export const StudentCatalogView: React.FC<StudentCatalogViewProps> = ({
+  currentStudent,
+  onLogout
+}) => {
   const { 
     ouvrages, 
     getExemplairesByOuvrage, 
@@ -335,14 +345,36 @@ export const StudentCatalogView: React.FC = () => {
               </div>
             </div>
 
-            {/* Bouton d'accès gestionnaire */}
-            <button
-              onClick={() => setIsManagerLoginOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition cursor-pointer"
-            >
-              <Shield className="w-3.5 h-3.5 text-amber-600" />
-              <span className="hidden sm:inline">Accès</span> Gestionnaire
-            </button>
+            {/* Zone utilisateur étudiant connecté & Déconnexion */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              {currentStudent && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-700">
+                    Bonjour, <strong className="font-semibold text-slate-900">{currentStudent.prenom}</strong>
+                  </span>
+                  {onLogout && (
+                    <button
+                      type="button"
+                      onClick={onLogout}
+                      className="min-h-[36px] flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 text-xs font-medium transition cursor-pointer"
+                      title="Se déconnecter de l'espace étudiant"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-slate-500" />
+                      <span className="hidden sm:inline">Se déconnecter</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Bouton discret d'accès gestionnaire */}
+              <button
+                onClick={() => setIsManagerLoginOpen(true)}
+                className="min-h-[36px] flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition cursor-pointer"
+              >
+                <Shield className="w-3.5 h-3.5 text-amber-600" />
+                <span className="hidden sm:inline">Accès</span> Gestionnaire
+              </button>
+            </div>
           </div>
         </div>
       </header>

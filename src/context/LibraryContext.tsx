@@ -34,6 +34,8 @@ interface LibraryContextType {
 
   // Date Simulation
   currentDate: string; // YYYY-MM-DD (simulated or real)
+  allowedAcademicDomain: string;
+  setAllowedAcademicDomain: (domain: string) => void;
   isSimulatedDate: boolean;
   setSimulatedDate: (date: string) => void;
   resetSimulatedDate: () => void;
@@ -248,6 +250,24 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const currentDate = simulatedDate || new Date().toISOString().split('T')[0];
   const isSimulatedDate = Boolean(simulatedDate);
+  const [allowedAcademicDomain, setAllowedAcademicDomainState] = useState<string>(() => {
+    try {
+      return localStorage.getItem('biblio_academic_domain') || '@usmba.ac.ma';
+    } catch {
+      return '@usmba.ac.ma';
+    }
+  });
+
+  const setAllowedAcademicDomain = (domain: string) => {
+    const clean = domain.trim().toLowerCase();
+    const formatted = clean.startsWith('@') ? clean : `@${clean}`;
+    setAllowedAcademicDomainState(formatted);
+    try {
+      localStorage.setItem('biblio_academic_domain', formatted);
+    } catch (err) {
+      console.error('Erreur sauvegarde domaine:', err);
+    }
+  };
 
   const setSimulatedDate = (date: string) => {
     setSimulatedDateState(date);
@@ -1263,6 +1283,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         activeManagerTab,
         setActiveManagerTab,
         currentDate,
+        allowedAcademicDomain,
+        setAllowedAcademicDomain,
         isSimulatedDate,
         setSimulatedDate,
         resetSimulatedDate,

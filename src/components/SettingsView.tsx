@@ -4,6 +4,7 @@ import {
   Download, 
   RefreshCw, 
   Sliders,
+  Globe,
   CheckCircle2
 } from 'lucide-react';
 import { useLibrary } from '../context/LibraryContext';
@@ -18,10 +19,21 @@ export const SettingsView: React.FC = () => {
     advanceDays, 
     exportDatabaseJSON, 
     resetToDefaultData,
-    runDailyChecks
+    runDailyChecks,
+    allowedAcademicDomain,
+    setAllowedAcademicDomain
   } = useLibrary();
 
+  const [domainInput, setDomainInput] = useState(allowedAcademicDomain);
+
   const [feedback, setFeedback] = useState<string | null>(null);
+  const handleSaveDomain = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!domainInput.trim()) return;
+    setAllowedAcademicDomain(domainInput.trim());
+    setFeedback(`Domaine e-mail académique mis à jour : ${domainInput.trim()}`);
+    setTimeout(() => setFeedback(null), 4000);
+  };
   const realToday = new Date().toISOString().split('T')[0];
 
   const handleRunChecks = () => {
@@ -155,6 +167,47 @@ export const SettingsView: React.FC = () => {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Block : Domaine académique autorisé pour les étudiants */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4 shadow-2xs">
+        <div className="border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <Globe className="w-4 h-4 text-amber-600" />
+            <h2 className="text-sm font-semibold text-slate-900">
+              Connexion étudiante & Domaine autorisé
+            </h2>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Les étudiants se connectent avec leur compte Google académique. Seules les adresses de ce domaine sont acceptées.
+          </p>
+        </div>
+
+        <form onSubmit={handleSaveDomain} className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1.5">
+              Suffixe de domaine autorisé
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={domainInput}
+                onChange={(e) => setDomainInput(e.target.value)}
+                placeholder="@usmba.ac.ma"
+                className="w-full sm:w-64 px-3 py-2 text-xs font-mono rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+              />
+              <button
+                type="submit"
+                className="min-h-[44px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs transition cursor-pointer"
+              >
+                Enregistrer
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Domaine actuellement actif : <strong className="font-mono text-slate-700">{allowedAcademicDomain}</strong>
+            </p>
+          </div>
+        </form>
       </div>
 
       {/* Block 2: Sauvegarde & Données */}
