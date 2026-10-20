@@ -1,150 +1,206 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * Composant universel de couverture d'ouvrage
+ * Résolution garantie sans erreur visible :
+ *   a) coverUrl existant (photo téléversée ou URL saisie)
+ *   b) Open Library (via ISBN)
+ *   c) Google Books (imageLinks.thumbnail en https)
+ *   d) Couverture générée (composant React autonome, ratio 2:3, fond sobre selon discipline)
+ * 
+ * Dès qu'une source externe (b ou c) est validée, elle est mise en cache dans coverUrl.
+ */
+
+import React, { useState, useEffect, useRef } from 'react';
 import { BookOpen, GraduationCap } from 'lucide-react';
-import { BookCategory } from '../types';
+import { Ouvrage } from '../types';
+import { 
+  CATEGORY_PALETTE, 
+  DEFAULT_CATEGORY_COLOR, 
+  cleanIsbnString, 
+  fetchGoogleBooksThumbnail 
+} from '../utils/coverResolver';
 
 interface BookCoverProps {
-  titre: string;
-  auteur: string;
-  categorie?: BookCategory | string;
+  ouvrage?: Partial<Ouvrage>;
+  titre?: string;
+  auteur?: string;
+  categorie?: string;
   coverUrl?: string;
-  coverGradient?: string;
+  isbn?: string;
   className?: string;
   size?: 'sm' | 'md' | 'lg';
+  onCacheCoverUrl?: (url: string) => void;
 }
 
-const CATEGORY_COLORS: Record<string, { bg: string; accent: string; badge: string }> = {
-  'Informatique & Numérique': {
-    bg: 'from-blue-900 via-indigo-900 to-slate-900',
-    accent: 'border-cyan-400/40 text-cyan-200',
-    badge: 'bg-cyan-500/20 text-cyan-200'
-  },
-  'Sciences & Techniques': {
-    bg: 'from-emerald-900 via-teal-900 to-slate-900',
-    accent: 'border-emerald-400/40 text-emerald-200',
-    badge: 'bg-emerald-500/20 text-emerald-200'
-  },
-  'Mathématiques & Physique': {
-    bg: 'from-violet-900 via-purple-900 to-slate-900',
-    accent: 'border-violet-400/40 text-violet-200',
-    badge: 'bg-violet-500/20 text-violet-200'
-  },
-  'Histoire & Géographie': {
-    bg: 'from-amber-900 via-yellow-900 to-stone-900',
-    accent: 'border-amber-400/40 text-amber-200',
-    badge: 'bg-amber-500/20 text-amber-200'
-  },
-  'Économie & Gestion': {
-    bg: 'from-teal-900 via-emerald-950 to-slate-900',
-    accent: 'border-teal-400/40 text-teal-200',
-    badge: 'bg-teal-500/20 text-teal-200'
-  },
-  'Droit & Sciences Politiques': {
-    bg: 'from-rose-950 via-red-950 to-slate-900',
-    accent: 'border-rose-400/40 text-rose-200',
-    badge: 'bg-rose-500/20 text-rose-200'
-  },
-  'Philosophie & Éthique': {
-    bg: 'from-stone-900 via-neutral-900 to-slate-950',
-    accent: 'border-stone-400/40 text-stone-200',
-    badge: 'bg-stone-500/20 text-stone-200'
-  },
-  'Langues & Littérature': {
-    bg: 'from-sky-950 via-blue-950 to-slate-900',
-    accent: 'border-sky-400/40 text-sky-200',
-    badge: 'bg-sky-500/20 text-sky-200'
-  },
-  'Médecine & Santé': {
-    bg: 'from-rose-900 via-pink-950 to-slate-900',
-    accent: 'border-pink-400/40 text-pink-200',
-    badge: 'bg-pink-500/20 text-pink-200'
-  },
-  'Général & Référence': {
-    bg: 'from-slate-800 via-slate-900 to-zinc-950',
-    accent: 'border-slate-400/40 text-slate-200',
-    badge: 'bg-slate-500/20 text-slate-200'
-  }
-};
-
 export const BookCover: React.FC<BookCoverProps> = ({
-  titre,
-  auteur,
-  categorie = 'Général & Référence',
-  coverUrl,
-  coverGradient,
+  ouvrage,
+  titre: propTitre,
+  auteur: propAuteur,
+  categorie: propCat,
+  coverUrl: propCoverUrl,
+  isbn: propIsbn,
   className = '',
-  size = 'md'
+  size = 'md',
+  onCacheCoverUrl
 }) => {
-  const [hasError, setHasError] = useState(false);
+  const titre = ouvrage?.titre || propTitre || 'Ouvrage sans titre';
+  const auteur = ouvrage?.auteur || propAuteur || 'Auteur non renseigné';
+  const categorie = ouvrage?.categorie || propCat || 'Général & Référence';
+  const initialCoverUrl = ouvrage?.coverUrl !== undefined ? ouvrage.coverUrl : propCoverUrl;
+  const isbn = ouvrage?.isbn || propIsbn || '';
 
-  // Re-enable image check if URL changes
+  // État de la source d'image actuellement tentée :
+  // sourceIndex: 
+  //   0: coverUrl existant (si présent)
+  //   1: Open Library
+  //   2: Google Books
+  //   3: Échec total -> couverture générée
+  const [sourceIndex, setSourceIndex] = useState<number>(0);
+  const [currentSrc, setCurrentSrc] = useState<string | null>(null);
+  const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  const isMounted = useRef<boolean>(true);
+
+  const cleanIsbn = cleanIsbnString(isbn);
+  const hasValidIsbn = cleanIsbn.length === 10 || cleanIsbn.length === 13;
+
   useEffect(() => {
-    setHasError(false);
-  }, [coverUrl]);
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
-  const catTheme = CATEGORY_COLORS[categorie] || CATEGORY_COLORS['Général & Référence'];
-  const gradientClass = coverGradient ? `bg-gradient-to-br ${coverGradient}` : `bg-gradient-to-br ${catTheme.bg}`;
+  // Initialisation à chaque changement d'ouvrage ou d'URL
+  useEffect(() => {
+    setIsLoaded(false);
+    if (initialCoverUrl && initialCoverUrl.trim()) {
+      setSourceIndex(0);
+      setCurrentSrc(initialCoverUrl.trim());
+    } else if (hasValidIsbn) {
+      setSourceIndex(1);
+      setCurrentSrc(`https://covers.openlibrary.org/b/isbn/${cleanIsbn}-L.jpg?default=false`);
+    } else {
+      setSourceIndex(3);
+      setCurrentSrc(null);
+    }
+  }, [initialCoverUrl, cleanIsbn, hasValidIsbn]);
 
+  // Étape suivante en cas d'erreur ou d'image invalide (< 50px)
+  const advanceToNextSource = async () => {
+    setIsLoaded(false);
+    if (sourceIndex === 0) {
+      // Passer à Open Library si ISBN disponible, sinon Google Books ou Couverture générée
+      if (hasValidIsbn) {
+        setSourceIndex(1);
+        setCurrentSrc(`https://covers.openlibrary.org/b/isbn/${cleanIsbn}-L.jpg?default=false`);
+      } else {
+        setSourceIndex(3);
+        setCurrentSrc(null);
+      }
+    } else if (sourceIndex === 1) {
+      // Open Library a échoué -> Essayer Google Books
+      setSourceIndex(2);
+      if (hasValidIsbn) {
+        const gbThumbnail = await fetchGoogleBooksThumbnail(cleanIsbn);
+        if (isMounted.current) {
+          if (gbThumbnail) {
+            setCurrentSrc(gbThumbnail);
+          } else {
+            setSourceIndex(3);
+            setCurrentSrc(null);
+          }
+        }
+      } else {
+        setSourceIndex(3);
+        setCurrentSrc(null);
+      }
+    } else {
+      // Google Books a échoué ou plus de sources -> Couverture générée
+      setSourceIndex(3);
+      setCurrentSrc(null);
+    }
+  };
+
+  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    // Détection d'image vide ou transparente de 1 pixel retournée par certains fournisseurs
+    if (img.naturalWidth < 40 || img.naturalHeight < 40) {
+      advanceToNextSource();
+    } else {
+      setIsLoaded(true);
+      // Mettre en cache dans coverUrl si trouvé via b (Open Library) ou c (Google Books)
+      if ((sourceIndex === 1 || sourceIndex === 2) && currentSrc && onCacheCoverUrl) {
+        onCacheCoverUrl(currentSrc);
+      }
+    }
+  };
+
+  const catTheme = CATEGORY_PALETTE[categorie] || DEFAULT_CATEGORY_COLOR;
   const isSmall = size === 'sm';
   const isLarge = size === 'lg';
 
-  // If coverUrl is provided and has not errored, render the real image
-  if (coverUrl && coverUrl.trim() && !hasError) {
-    return (
-      <div 
-        className={`relative aspect-[2/3] overflow-hidden rounded-xl bg-slate-900 shadow-md ring-1 ring-black/10 select-none ${className}`}
-      >
-        <img
-          src={coverUrl}
-          alt={`Couverture de ${titre}`}
-          loading="lazy"
-          onError={() => setHasError(true)}
-          className="w-full h-full object-cover transition duration-200 hover:scale-[1.02]"
-        />
-        {/* Subtle academic spine shadow effect */}
-        <div className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-r from-black/40 to-transparent pointer-events-none" />
-      </div>
-    );
-  }
+  // Si une image valide est en cours ou chargée
+  const renderImage = sourceIndex < 3 && currentSrc;
 
-  // Generated replacement cover (fond de la couleur de la discipline, titre et auteur)
   return (
     <div 
-      className={`relative aspect-[2/3] overflow-hidden rounded-xl ${gradientClass} text-white shadow-md ring-1 ring-white/10 p-3 sm:p-4 flex flex-col justify-between select-none ${className}`}
+      className={`relative aspect-[2/3] w-full overflow-hidden rounded-xl shadow-xs ring-1 ring-black/10 select-none ${className}`}
+      title={`${titre} - ${auteur}`}
     >
-      {/* Spine shadow overlay */}
-      <div className="absolute inset-y-0 left-0 w-2 bg-gradient-to-r from-black/50 via-black/20 to-transparent pointer-events-none" />
-
-      {/* Top discipline tag & icon */}
-      <div className="relative z-10 flex items-start justify-between gap-1">
-        <span className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded backdrop-blur-xs ${catTheme.badge} truncate max-w-[85%]`}>
-          {categorie}
-        </span>
-        <GraduationCap className="w-3.5 h-3.5 text-white/40 shrink-0" />
-      </div>
-
-      {/* Middle: Title & Author */}
-      <div className="relative z-10 my-auto py-2">
-        <div className="w-6 h-0.5 bg-amber-400/80 mb-2 rounded-full" />
-        <h4 className={`font-serif font-bold text-white tracking-tight leading-snug line-clamp-3 ${
-          isSmall ? 'text-[11px]' : isLarge ? 'text-base sm:text-lg' : 'text-xs sm:text-sm'
-        }`}>
-          {titre}
-        </h4>
-        <p className={`text-white/80 font-medium mt-1.5 line-clamp-2 ${
-          isSmall ? 'text-[9px]' : 'text-[11px]'
-        }`}>
-          {auteur}
-        </p>
-      </div>
-
-      {/* Bottom university seal mark */}
-      <div className="relative z-10 pt-2 border-t border-white/10 flex items-center justify-between text-[9px] text-white/50 font-mono">
-        <div className="flex items-center gap-1">
-          <BookOpen className="w-3 h-3 text-white/40" />
-          <span className="uppercase tracking-widest text-[8px]">BiblioPrêt</span>
+      {/* (d) Couverture générée : toujours prête en fond ou affichée si aucune image */}
+      <div 
+        className={`absolute inset-0 w-full h-full bg-gradient-to-br ${catTheme.bg} text-white p-3 flex flex-col justify-between`}
+      >
+        {/* Ombre de reliure gauche */}
+        <div className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-r from-black/50 via-black/20 to-transparent pointer-events-none" />
+        
+        {/* En-tête discipline */}
+        <div className="relative z-10 flex items-start justify-between gap-1">
+          <span className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded backdrop-blur-xs ${catTheme.badge} truncate max-w-[85%]`}>
+            {categorie}
+          </span>
+          <GraduationCap className="w-3.5 h-3.5 text-white/40 shrink-0" />
         </div>
-        <span className="text-[8px] opacity-60">Édition Univ.</span>
+
+        {/* Titre (3 lignes max) & auteur */}
+        <div className="relative z-10 my-auto py-1">
+          <div className="w-5 h-0.5 bg-amber-400/80 mb-1.5 rounded-full" />
+          <h4 className={`font-serif font-bold text-white tracking-tight leading-snug line-clamp-3 ${
+            isSmall ? 'text-[11px]' : isLarge ? 'text-sm sm:text-base' : 'text-xs sm:text-sm'
+          }`}>
+            {titre}
+          </h4>
+          <p className={`text-white/80 font-medium mt-1.5 line-clamp-2 ${
+            isSmall ? 'text-[9px]' : 'text-[10px]'
+          }`}>
+            {auteur}
+          </p>
+        </div>
+
+        {/* Pied : Mention bibliothèque */}
+        <div className="relative z-10 pt-1.5 border-t border-white/10 flex items-center justify-between text-[8px] text-white/50 font-mono">
+          <div className="flex items-center gap-1">
+            <BookOpen className="w-3 h-3 text-white/40" />
+            <span className="uppercase tracking-wider">BiblioPrêt</span>
+          </div>
+          <span className="opacity-60">EST Univ.</span>
+        </div>
       </div>
+
+      {/* Image externe superposée avec transition douce */}
+      {renderImage && (
+        <img
+          key={currentSrc}
+          src={currentSrc}
+          alt={`Couverture : ${titre}`}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onLoad={handleImageLoad}
+          onError={advanceToNextSource}
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
+            isLoaded ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      )}
     </div>
   );
 };

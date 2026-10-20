@@ -68,6 +68,7 @@ interface LibraryContextType {
   getJoursDeRetard: (dateRetourPrevue: string) => number;
   isEmpruntAContacter: (emprunt: Emprunt) => boolean;
   runDailyChecks: (targetDateStr?: string) => { remindersSentCount: number };
+  sendBulkManualReminders: (adherentIds: string[]) => { sentCount: number };
 
   // Configuration
   loanDurationDays: number;
@@ -308,7 +309,11 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [adherents, setAdherents] = useState<Adherent[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_ADHERENTS);
-      return saved ? JSON.parse(saved) : INITIAL_ADHERENTS;
+      const list = saved ? JSON.parse(saved) : INITIAL_ADHERENTS;
+      return list.map((a: any) => {
+        const { codeQR, ...cleanAdh } = a;
+        return cleanAdh as Adherent;
+      });
     } catch {
       return INITIAL_ADHERENTS;
     }
@@ -538,7 +543,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
           nom: row.nom,
           prenom: row.prenom,
           emailAcademique: row.emailAcademique,
-          codeQR: row.numeroEtudiant,
           dateInscription: currentDate,
           dateExpiration: endOfAcademicYear,
           statut: 'actif'
@@ -647,11 +651,11 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     return diff > 0 ? diff : 0;
   };
 
-  // Après le 2e rappel sans retour, l'emprunt est « à contacter »
+  // « À contacter » = nbRappels >= 3 et emprunt toujours en retard (contact hors application)
   const isEmpruntAContacter = (emp: Emprunt): boolean => {
     if (emp.statut !== 'en_cours' || emp.annule) return false;
     if (!isEmpruntEnRetard(emp)) return false;
-    return (emp.nbRappels || 0) >= 2;
+    return (emp.nbRappels || 0) >= 3;
   };
 
   // Student authorization check (rule 3: calculé à la volée)
@@ -895,15 +899,14 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       };
     }
 
-    // 2. Resolve Student
+    // 2. Resolve Student (carte étudiante EST portant le numeroEtudiant)
     const cleanStudCode = studentCodeOrId.trim().toUpperCase();
     const student = adherents.find(a => 
-      a.codeQR.trim().toUpperCase() === cleanStudCode || 
       a.numeroEtudiant.trim().toUpperCase() === cleanStudCode || 
       a.id === studentCodeOrId
     );
     if (!student) {
-      return { success: false, error: `Étudiant introuvable avec le numéro/carte "${studentCodeOrId}".` };
+      return { success: false, error: "Carte non reconnue : étudiant absent de la liste importée" };
     }
 
     // Rule 2: L'exemplaire doit être DISPONIBLE
@@ -979,7 +982,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
 
   // Automatic verification of overdue loan reminders
-  // 1er rappel 2 jours après dateRetourPrevue ; 2e rappel 2 jours après le premier (J+4)
+  // J+1 : e-mail courtois automatique (nbRappels = 1)
+  // J+2 : e-mail moyennement courtois, plus insistant automatique (nbRappels = 2)
+  // J+3 ou plus : aucun envoi automatique
   const checkOverdueReminders = (targetDateStr?: string): { remindersCount: number } => {
     const effectiveDate = targetDateStr || currentDate;
     const newReminders: EmailNotification[] = [];
@@ -992,7 +997,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       const daysLate = Math.floor(
         (new Date(effectiveDate).getTime() - new Date(emp.dateRetourPrevue).getTime()) / (1000 * 60 * 60 * 24)
       );
-      if (daysLate <= 0) continue;
+
+      // Aucun envoi automatique à 3 jours ou plus
+      if (daysLate <= 0 || daysLate >= 3) continue;
 
       const nbRappels = emp.nbRappels || 0;
       const adh = getAdherentById(emp.adherentId);
@@ -1002,15 +1009,24 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
       const datePrevueFr = new Date(emp.dateRetourPrevue).toLocaleDateString('fr-FR');
 
-      // Rule: 1er rappel 2 jours après dateRetourPrevue (daysLate >= 2)
-      if (nbRappels === 0 && daysLate >= 2) {
+      // Palier 1 : exactement 1 jour de retard (J+1) et nbRappels < 1
+      if (daysLate === 1 && nbRappels < 1) {
         newReminders.push({
           id: `notif_rap1_${emp.id}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
           destinataireEmail: adh.emailAcademique,
           destinataireNom: `${adh.prenom} ${adh.nom}`,
           destinataireNumero: adh.numeroEtudiant,
-          sujet: `1er Rappel de retard : ${ow.titre}`,
-          corps: `Bonjour ${adh.prenom},\n\nSauf erreur de notre part, l'emprunt de l'ouvrage "${ow.titre}" (Cote : ${ow.cote}, Exemplaire : ${ex?.codeQR || ''}) souscrit sous votre compte étudiant (${adh.numeroEtudiant}) est arrivé à échéance le ${datePrevueFr}.\n\nNombre de jours de retard constatés : ${daysLate} jour(s).\n\nConformément au règlement universitaire, tout retard non régularisé entraîne le blocage immédiat de vos nouveaux emprunts au guichet. Merci de rapporter cet exemplaire dans les meilleurs délais.\n\nCordialement,\nLe Service des Prêts Universitaire`,
+          sujet: `1er Rappel : restitution attendue - ${ow.titre}`,
+          corps: `Bonjour ${adh.prenom},
+
+Sauf erreur de notre part, l'emprunt de l'ouvrage "${ow.titre}" (Cote : ${ow.cote}, Exemplaire : ${ex?.codeQR || ''}) souscrit sous votre compte étudiant (${adh.numeroEtudiant}) est arrivé à échéance hier, le ${datePrevueFr}.
+
+Nombre de jours de retard : 1 jour.
+
+Nous vous remercions de bien vouloir rapporter cet exemplaire au guichet de la bibliothèque dès que possible afin de permettre aux autres étudiants d'y accéder.
+
+Cordialement,
+Le Service des Prêts Universitaire`,
           dateEnvoi: effectiveDate,
           heureEnvoi: '08:30',
           type: 'RAPPEL_RETARD_1',
@@ -1020,21 +1036,27 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
           exemplaireCode: ex?.codeQR,
           adherentId: adh.id
         });
-
         updatedEmpruntsMap.set(emp.id, {
           nbRappels: 1,
           dateDernierRappel: effectiveDate
         });
       }
-      // Rule: 2e rappel 2 jours après le premier rappel (daysLate >= 4)
-      else if (nbRappels === 1 && daysLate >= 4) {
+      // Palier 2 : exactement 2 jours de retard (J+2) et nbRappels < 2
+      else if (daysLate === 2 && nbRappels < 2) {
         newReminders.push({
           id: `notif_rap2_${emp.id}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
           destinataireEmail: adh.emailAcademique,
           destinataireNom: `${adh.prenom} ${adh.nom}`,
           destinataireNumero: adh.numeroEtudiant,
-          sujet: `2e et Dernier Rappel de retard : ${ow.titre}`,
-          corps: `Bonjour ${adh.prenom},\n\nCeci est le second rappel concernant le retard de restitution de l'ouvrage "${ow.titre}" (Cote : ${ow.cote}, Exemplaire : ${ex?.codeQR || ''}), dont la date prévue de retour était le ${datePrevueFr}.\n\nNombre de jours de retard : ${daysLate} jour(s).\n\nSans restitution immédiate, votre dossier sera transmis pour contact direct (« À contacter ») et vos droits d'emprunt demeurent entièrement suspendus.\n\nCordialement,\nLe Service des Prêts Universitaire`,
+          sujet: `2e Rappel : retard confirmé - ${ow.titre}`,
+          corps: `Bonjour ${adh.prenom},
+
+Nous constatons que l'ouvrage "${ow.titre}" (Cote : ${ow.cote}, Exemplaire : ${ex?.codeQR || ''}), dont la restitution était prévue le ${datePrevueFr}, n'a toujours pas été rapporté (2 jours de retard).
+
+Nous vous rappelons que tout retard suspend vos droits d'emprunt au guichet. Merci de rapporter impérativement ce livre au guichet sous 24 heures.
+
+Cordialement,
+Le Service des Prêts Universitaire`,
           dateEnvoi: effectiveDate,
           heureEnvoi: '08:30',
           type: 'RAPPEL_RETARD_2',
@@ -1044,7 +1066,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
           exemplaireCode: ex?.codeQR,
           adherentId: adh.id
         });
-
         updatedEmpruntsMap.set(emp.id, {
           nbRappels: 2,
           dateDernierRappel: effectiveDate
@@ -1073,6 +1094,106 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     return { remindersCount: newReminders.length };
   };
 
+  // Envoi MANUEL groupé de rappels sévères (J+3 ou plus, nbRappels < 3) :
+  // Pour chaque étudiant sélectionné : un seul e-mail sévère dans le journal listant tous ses retards concernés ;
+  // Pour chaque emprunt concerné nbRappels = 3 et dateDernierRappel = date du jour.
+  const sendBulkManualReminders = (adherentIds: string[]): { sentCount: number } => {
+    if (adherentIds.length === 0) return { sentCount: 0 };
+    const targetSet = new Set(adherentIds);
+    const newNotifications: EmailNotification[] = [];
+    const loanUpdates = new Map<string, { nbRappels: number; dateDernierRappel: string }>();
+
+    for (const adhId of targetSet) {
+      const adh = getAdherentById(adhId);
+      if (!adh) continue;
+
+      // Trouver tous les emprunts concernés de cet étudiant (en_cours, non annule, retard >= 3, nbRappels < 3)
+      const concernedLoans = emprunts.filter(e => {
+        if (e.adherentId !== adhId || e.statut !== 'en_cours' || e.annule) return false;
+        const days = Math.floor(
+          (new Date(currentDate).getTime() - new Date(e.dateRetourPrevue).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        return days >= 3 && (e.nbRappels || 0) < 3;
+      });
+
+      if (concernedLoans.length === 0) continue;
+
+      // Liste des ouvrages concernés
+      const bookLines = concernedLoans.map(loan => {
+        const ow = getOuvrageById(loan.ouvrageId);
+        const ex = getExemplaireById(loan.exemplaireId);
+        const days = Math.floor(
+          (new Date(currentDate).getTime() - new Date(loan.dateRetourPrevue).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        return `• "${ow?.titre || 'Ouvrage'}" (Cote : ${ow?.cote || '—'}, Exemplaire : ${ex?.codeQR || '—'}, Échéance : ${new Date(loan.dateRetourPrevue).toLocaleDateString('fr-FR')}, Retard : ${days} jours)`;
+      }).join('\n');
+
+      const primaryLoan = concernedLoans[0];
+      const primaryOw = getOuvrageById(primaryLoan.ouvrageId);
+      const primaryEx = getExemplaireById(primaryLoan.exemplaireId);
+
+      const severeSubject = concernedLoans.length > 1
+        ? `MISE EN DEMEURE : Restitution urgente de vos ${concernedLoans.length} emprunts en retard`
+        : `MISE EN DEMEURE : Restitution urgente de l'ouvrage "${primaryOw?.titre}"`;
+
+      const severeBody = `Bonjour ${adh.prenom} ${adh.nom},
+
+Malgré nos relances précédentes, nous constatons avec fermeté que vous n'avez toujours pas régularisé votre situation auprès de la bibliothèque universitaire.
+
+Document(s) concerné(s) non restitué(s) :
+${bookLines}
+
+Vos droits d'emprunt sont d'ores et déjà totalement révoqués au guichet. Nous exigeons la restitution immédiate et sans délai de l'ensemble de ces exemplaires physiques. 
+
+À défaut de retour immédiat, votre dossier sera transmis pour contact direct (« À contacter ») et d'éventuelles mesures administratives auprès de la direction des études de l'EST.
+
+Le Service de Gestion de la Bibliothèque Universitaire`;
+
+      newNotifications.push({
+        id: `notif_rap3_${adh.id}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        destinataireEmail: adh.emailAcademique,
+        destinataireNom: `${adh.prenom} ${adh.nom}`,
+        destinataireNumero: adh.numeroEtudiant,
+        sujet: severeSubject,
+        corps: severeBody,
+        dateEnvoi: currentDate,
+        heureEnvoi: '09:00',
+        type: 'RAPPEL_RETARD_3',
+        ouvrageId: primaryOw?.id || '',
+        ouvrageTitre: primaryOw?.titre || '',
+        exemplaireId: primaryEx?.id,
+        exemplaireCode: primaryEx?.codeQR,
+        adherentId: adh.id
+      });
+
+      concernedLoans.forEach(l => {
+        loanUpdates.set(l.id, {
+          nbRappels: 3,
+          dateDernierRappel: currentDate
+        });
+      });
+    }
+
+    if (loanUpdates.size > 0) {
+      setEmprunts(prev => prev.map(e => {
+        const u = loanUpdates.get(e.id);
+        if (u) {
+          return {
+            ...e,
+            nbRappels: u.nbRappels,
+            dateDernierRappel: u.dateDernierRappel
+          };
+        }
+        return e;
+      }));
+    }
+
+    if (newNotifications.length > 0) {
+      setNotifications(prev => [...newNotifications, ...prev]);
+    }
+
+    return { sentCount: newNotifications.length };
+  };
   // Automated daily check (Contrôle automatique lancé à l'ouverture et au moins 1x par jour)
   // Il traite les rappels de retard.
   const runDailyChecks = (targetDateStr?: string): { remindersSentCount: number } => {
@@ -1185,9 +1306,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       return { found: true, type: 'exemplaire', item: matchedEx };
     }
 
-    // Check if it's an Adherent QR or Numero Etudiant
+    // Check if it's a student card QR (numeroEtudiant)
     const matchedAdh = adherents.find(a => 
-      a.codeQR.trim().toUpperCase() === trimmed || 
       a.numeroEtudiant.trim().toUpperCase() === trimmed
     );
     if (matchedAdh) {
@@ -1309,6 +1429,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         getJoursDeRetard,
         isEmpruntAContacter,
         runDailyChecks,
+        sendBulkManualReminders,
         loanDurationDays,
         setLoanDurationDays,
         addOuvrage,

@@ -80,7 +80,7 @@ export const SettingsView: React.FC = () => {
             </h2>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Simulez l'écoulement du temps pour vérifier les échéances de prêt (15 jours) et les rappels automatiques (J+2 et J+4).
+            Simulez l'écoulement du temps pour vérifier les échéances de prêt (15 jours), les rappels automatiques (J+1 et J+2) et le traitement manuel à J+3.
           </p>
         </div>
 
@@ -132,14 +132,14 @@ export const SettingsView: React.FC = () => {
             <button
               onClick={() => advanceDays(2)}
               className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition cursor-pointer"
-              title="Avancer de 2 jours (J+2 : premier rappel)"
+              title="Avancer de 2 jours (J+2 : 2e rappel automatique)"
             >
               +2j
             </button>
             <button
               onClick={() => advanceDays(4)}
               className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition cursor-pointer"
-              title="Avancer de 4 jours (J+4 : 2e rappel)"
+              title="Avancer de 4 jours (J+4 : À rappeler manuellement)"
             >
               +4j
             </button>

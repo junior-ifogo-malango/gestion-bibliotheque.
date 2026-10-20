@@ -451,7 +451,7 @@ export const ScanLoanModal: React.FC = () => {
                   step === 2 ? 'border-amber-600 bg-amber-50 text-amber-900' : 'border-slate-200 bg-slate-50 text-slate-500'
                 }`}>
                   <User className="w-4 h-4 text-amber-600" />
-                  <span>2. Carte Étudiant</span>
+                  <span>2. Carte Étudiant EST</span>
                 </div>
               </div>
 
@@ -460,12 +460,12 @@ export const ScanLoanModal: React.FC = () => {
                 <p className="font-extrabold text-sm text-slate-800 font-serif">
                   {step === 1 
                     ? "Pointez la caméra vers le code QR de l'exemplaire" 
-                    : "Pointez la caméra vers le code QR de la carte étudiant"}
+                    : "Pointez la caméra vers le code QR de la carte étudiant EST"}
                 </p>
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   {step === 1 
                     ? "L'étudiant présente le livre pris en rayon." 
-                    : `Exemplaire scanné : ${exemplaireCode}. Scannez maintenant sa carte.`}
+                    : `Exemplaire scanné : ${exemplaireCode}. Scannez maintenant sa carte étudiant EST (numéro d'étudiant).`}
                 </p>
               </div>
 

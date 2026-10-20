@@ -54,7 +54,6 @@ export interface Adherent {
   nom: string;
   prenom: string;
   emailAcademique: string;
-  codeQR: string; // Égal au numeroEtudiant
   dateInscription: string;
   dateExpiration: string; // Fin de l'année universitaire (ex: YYYY-08-31)
   statut: StatutAdherent;
@@ -81,7 +80,7 @@ export interface Emprunt {
 }
 
 
-export type TypeNotification = 'RAPPEL_RETARD_1' | 'RAPPEL_RETARD_2';
+export type TypeNotification = 'RAPPEL_RETARD_1' | 'RAPPEL_RETARD_2' | 'RAPPEL_RETARD_3';
 
 export interface EmailNotification {
   id: string;

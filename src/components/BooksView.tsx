@@ -23,6 +23,7 @@ export const BooksView: React.FC = () => {
     exemplaires, 
     getExemplairesByOuvrage, 
     setSelectedOuvrage, 
+    updateOuvrage,
     setIsNewOuvrageOpen,
     setActivePrintLabelsOuvrageId,
     setIsQRScannerOpen
@@ -176,12 +177,9 @@ export const BooksView: React.FC = () => {
                   className="w-24 sm:w-28 shrink-0 self-center sm:self-start shadow-xs rounded-lg overflow-hidden cursor-pointer"
                 >
                   <BookCover
-                    titre={ow.titre}
-                    auteur={ow.auteur}
-                    categorie={ow.categorie}
-                    coverUrl={ow.coverUrl}
-                    coverGradient={ow.coverGradient}
+                    ouvrage={ow}
                     size="sm"
+                    onCacheCoverUrl={(url) => updateOuvrage(ow.id, { coverUrl: url })}
                   />
                 </div>
 
@@ -224,68 +222,69 @@ export const BooksView: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Badges de disponibilité bien visibles & Actions */}
-                  <div className="mt-3.5 pt-3 border-t border-slate-100 space-y-2.5">
-                    {!ow.empruntable ? (
-                      /* Badge orange bien visible : « Consultation sur place uniquement » */
-                      <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-950 text-xs">
-                        <div className="font-bold flex items-center justify-between gap-1.5 text-amber-900">
-                          <span className="flex items-center gap-1.5">
-                            <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                            Consultation sur place uniquement
-                          </span>
-                        </div>
-                        {firstAnyCopy && (
-                          <div className="mt-1 font-mono text-[11px] text-amber-800 flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-amber-600 shrink-0" />
-                            <span>Emplacement : <strong>Tiroir {firstAnyCopy.emplacement.tiroir}</strong>, <strong>Rangée {firstAnyCopy.emplacement.rangee}</strong></span>
-                          </div>
-                        )}
-                      </div>
-                    ) : availableCopies.length > 0 ? (
-                      /* Badge vert bien visible : « Disponible : tiroir X, rangée Y » */
-                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs">
-                        <div className="font-bold flex items-center justify-between gap-1.5 text-emerald-900">
-                          <span className="flex items-center gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            Disponible : tiroir {firstAvailable?.emplacement.tiroir}, rangée {firstAvailable?.emplacement.rangee}
-                          </span>
-                          <span className="text-[11px] text-emerald-700 font-medium shrink-0">
-                            {availableCopies.length}/{activeCopies.length} ex.
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      /* Badge gris : « Indisponible » */
-                      <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-800 text-xs">
-                        <div className="font-bold flex items-center justify-between gap-1.5 text-slate-700">
-                          <span className="flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                            Indisponible
-                          </span>
-                          <span className="text-[11px] text-slate-500 font-medium">
-                            0/{activeCopies.length} en rayon
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                  {/* Disponibilité compacte & Actions */}
+                  <div className="mt-3.5 pt-2.5 border-t border-slate-100 space-y-2.5">
+                    {/* 1. Disponibilité : ligne compacte et horizontale sur une seule ligne */}
+                    <div className="whitespace-nowrap overflow-hidden text-ellipsis">
+                      {!ow.empruntable ? (
+                        /* Ouvrage à consultation sur place : « Sur place uniquement » */
+                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-semibold bg-amber-50 text-amber-900 border border-amber-200/80">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                          <span>Sur place uniquement</span>
+                          {firstAnyCopy && (
+                            <>
+                              <span className="text-amber-400">·</span>
+                              <span className="font-mono">{firstAnyCopy.emplacement.tiroir} / {firstAnyCopy.emplacement.rangee}</span>
+                              <span className="text-amber-400">·</span>
+                              <span className="font-mono">{activeCopies.length} ex.</span>
+                            </>
+                          )}
+                        </span>
+                      ) : availableCopies.length > 0 ? (
+                        /* Disponible : vert ● Disponible · T1 / R2 · 2/3 ex. */
+                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-semibold bg-emerald-50 text-emerald-900 border border-emerald-200/80">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                          <span>Disponible</span>
+                          <span className="text-emerald-400">·</span>
+                          <span className="font-mono">{firstAvailable?.emplacement.tiroir} / {firstAvailable?.emplacement.rangee}</span>
+                          <span className="text-emerald-400">·</span>
+                          <span className="font-mono">{availableCopies.length}/{activeCopies.length} ex.</span>
+                        </span>
+                      ) : (
+                        /* Aucun exemplaire disponible : gris avec « Indisponible » */
+                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                          <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
+                          <span>Indisponible</span>
+                          {firstAnyCopy && (
+                            <>
+                              <span className="text-slate-300">·</span>
+                              <span className="font-mono">{firstAnyCopy.emplacement.tiroir} / {firstAnyCopy.emplacement.rangee}</span>
+                            </>
+                          )}
+                          <span className="text-slate-300">·</span>
+                          <span className="font-mono">0/{activeCopies.length} ex.</span>
+                        </span>
+                      )}
+                    </div>
 
-                    {/* Actions de gestion conservées */}
-                    <div className="flex items-center justify-between pt-1">
+                    {/* 2. Boutons du bas : Planche QR à GAUCHE avec contour, Exemplaires (N) à droite, même hauteur, une seule ligne */}
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
                       <button
+                        type="button"
                         onClick={() => setActivePrintLabelsOuvrageId(ow.id)}
-                        className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1"
+                        className="h-8 px-2.5 sm:px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-1.5 shrink-0 transition whitespace-nowrap cursor-pointer shadow-2xs"
                         title="Imprimer les étiquettes QR de cet ouvrage"
                       >
-                        <Printer className="w-3.5 h-3.5 text-amber-600" />
+                        <Printer className="w-3.5 h-3.5 text-slate-500" />
                         <span>Planche QR</span>
                       </button>
 
                       <button
+                        type="button"
                         onClick={() => setSelectedOuvrage(ow)}
-                        className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition shadow-xs"
+                        className="h-8 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center justify-center shrink-0 whitespace-nowrap cursor-pointer shadow-xs"
                       >
-                        Fiche & Exemplaires ({exList.length})
+                        <span>Exemplaires ({exList.length})</span>
                       </button>
                     </div>
                   </div>

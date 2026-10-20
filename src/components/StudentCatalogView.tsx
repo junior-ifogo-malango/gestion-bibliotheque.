@@ -16,107 +16,8 @@ import {
 } from 'lucide-react';
 import { useLibrary } from '../context/LibraryContext';
 import { Ouvrage } from '../types';
+import { BookCover } from './BookCover';
 import { ConnectedStudent } from '../services/authService';
-
-interface StudentGridCoverProps {
-  titre: string;
-  coverUrl?: string;
-  isbn?: string;
-}
-
-/**
- * Couverture pour la carte de la grille :
- * - Format portrait 2:3, chargement différé, mêmes proportions pour tous
- * - Ordre d'essai : coverUrl de l'ouvrage, puis https://covers.openlibrary.org/b/isbn/{ISBN}-L.jpg?default=false, puis couverture de remplacement
- * - Détection d'échec sur onError et sur image < 50px (ex: 1x1 pixel vide)
- * - referrerPolicy="no-referrer"
- * - Fond gris clair uni avec titre de l'ouvrage centré (aucun cadre vide ne doit jamais apparaître)
- */
-const StudentGridCover: React.FC<StudentGridCoverProps> = ({ titre, coverUrl, isbn }) => {
-  const cleanIsbn = useMemo(() => (isbn ? isbn.replace(/[^0-9X]/gi, '') : ''), [isbn]);
-  const fallbackUrl = useMemo(
-    () => (cleanIsbn ? `https://covers.openlibrary.org/b/isbn/${cleanIsbn}-L.jpg?default=false` : null),
-    [cleanIsbn]
-  );
-
-  const isExplicitEmpty = coverUrl !== undefined && coverUrl.trim() === '';
-  const initialUrl = isExplicitEmpty
-    ? null
-    : (coverUrl && coverUrl.trim() ? coverUrl.trim() : fallbackUrl);
-
-  const [currentSrc, setCurrentSrc] = useState<string | null>(initialUrl);
-  const [triedFallback, setTriedFallback] = useState<boolean>(
-    Boolean(isExplicitEmpty || !coverUrl || (currentSrc && currentSrc === fallbackUrl))
-  );
-  const [isLoaded, setIsLoaded] = useState<boolean>(false);
-  const [failed, setFailed] = useState<boolean>(!initialUrl);
-
-  useEffect(() => {
-    const freshExplicitEmpty = coverUrl !== undefined && coverUrl.trim() === '';
-    const freshInitial = freshExplicitEmpty
-      ? null
-      : (coverUrl && coverUrl.trim() ? coverUrl.trim() : fallbackUrl);
-
-    setCurrentSrc(freshInitial);
-    setTriedFallback(Boolean(freshExplicitEmpty || !coverUrl || (freshInitial && freshInitial === fallbackUrl)));
-    setIsLoaded(false);
-    setFailed(!freshInitial);
-  }, [coverUrl, fallbackUrl]);
-
-  const handleImageError = () => {
-    if (!triedFallback && fallbackUrl && currentSrc !== fallbackUrl) {
-      setTriedFallback(true);
-      setCurrentSrc(fallbackUrl);
-      setIsLoaded(false);
-    } else {
-      setFailed(true);
-      setCurrentSrc(null);
-    }
-  };
-
-  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    if (img.naturalWidth < 50 || img.naturalHeight < 50) {
-      handleImageError();
-    } else {
-      setIsLoaded(true);
-    }
-  };
-
-  return (
-    <div 
-      className="relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-slate-200 shadow-xs border border-slate-200 transition duration-200 group-hover:shadow-md group-hover:scale-[1.02] select-none"
-      title={titre}
-    >
-      {/* Couverture de remplacement neutre toujours présente en fond ou finale */}
-      <div 
-        className="absolute inset-0 w-full h-full bg-slate-200 text-slate-800 p-3 sm:p-4 flex items-center justify-center text-center select-none"
-        title={titre}
-      >
-        <span className="font-serif font-bold text-xs sm:text-sm leading-snug line-clamp-4">
-          {titre}
-        </span>
-      </div>
-
-      {/* Image si URL active */}
-      {!failed && currentSrc && (
-        <img
-          key={currentSrc}
-          src={currentSrc}
-          alt={titre}
-          title={titre}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          onLoad={handleImageLoad}
-          onError={handleImageError}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
-            isLoaded ? 'opacity-100' : 'opacity-0'
-          }`}
-        />
-      )}
-    </div>
-  );
-};
 
 const normalizeText = (str: string): string => {
   return str
@@ -152,8 +53,10 @@ export const StudentCatalogView: React.FC<StudentCatalogViewProps> = ({
 }) => {
   const { 
     ouvrages, 
+    adherents,
     getExemplairesByOuvrage, 
-    setIsManagerLoginOpen 
+    setIsManagerLoginOpen,
+    updateOuvrage
   } = useLibrary();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -162,6 +65,20 @@ export const StudentCatalogView: React.FC<StudentCatalogViewProps> = ({
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [selectedStudentOuvrage, setSelectedStudentOuvrage] = useState<Ouvrage | null>(null);
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+
+  // Nom affiché dans l'en-tête étudiant : prénom de l'adhérent s'il existe dans la liste, sinon partie avant le @
+  const studentDisplayName = useMemo(() => {
+    if (!currentStudent) return '';
+    const cleanEmail = currentStudent.email?.trim().toLowerCase();
+    const matched = cleanEmail ? adherents.find(a => a.emailAcademique.trim().toLowerCase() === cleanEmail) : null;
+    if (matched && matched.prenom) {
+      return matched.prenom;
+    }
+    if (currentStudent.prenom && !currentStudent.email) {
+      return currentStudent.prenom;
+    }
+    return cleanEmail ? cleanEmail.split('@')[0] : (currentStudent.prenom || 'Étudiant');
+  }, [currentStudent, adherents]);
 
   // Filtres avancés Titre et Auteur (facultatifs, vides par défaut)
   const [titleFilterInput, setTitleFilterInput] = useState('');
@@ -350,7 +267,7 @@ export const StudentCatalogView: React.FC<StudentCatalogViewProps> = ({
               {currentStudent && (
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium text-slate-700">
-                    Bonjour, <strong className="font-semibold text-slate-900">{currentStudent.prenom}</strong>
+                    Bonjour, <strong className="font-semibold text-slate-900">{studentDisplayName}</strong>
                   </span>
                   {onLogout && (
                     <button
@@ -790,7 +707,7 @@ export const StudentCatalogView: React.FC<StudentCatalogViewProps> = ({
                 >
                   {/* Page de couverture : format portrait 2:3, chargement différé, mêmes proportions */}
                   <div className="w-full">
-                    <StudentGridCover titre={ow.titre} coverUrl={ow.coverUrl} isbn={ow.isbn} />
+                    <BookCover ouvrage={ow} size="md" onCacheCoverUrl={(url) => updateOuvrage(ow.id, { coverUrl: url })} />
                   </div>
 
                   {/* En dessous, une seule ligne discrète : « Tiroir X · Rangée Y » (plus « Indisponible » en gris si aucun exemplaire disponible) */}
@@ -876,7 +793,7 @@ export const StudentCatalogView: React.FC<StudentCatalogViewProps> = ({
                   <div className="flex flex-col sm:flex-row gap-6 items-start">
                     {/* Couverture au format portrait 2:3 */}
                     <div className="w-32 sm:w-36 shrink-0 shadow-md rounded-xl overflow-hidden self-center sm:self-start">
-                      <StudentGridCover titre={ow.titre} coverUrl={ow.coverUrl} isbn={ow.isbn} />
+                      <BookCover ouvrage={ow} size="md" onCacheCoverUrl={(url) => updateOuvrage(ow.id, { coverUrl: url })} />
                     </div>
 
                     {/* Données de l'ouvrage */}

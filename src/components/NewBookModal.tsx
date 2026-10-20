@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
-import { X, BookPlus, Search, Loader2, CheckCircle2, AlertCircle, Layers, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, BookPlus, Search, Loader2, CheckCircle2, AlertCircle, Layers, Image as ImageIcon,
+  Upload,
+  Trash2
+} from 'lucide-react';
 import { useLibrary } from '../context/LibraryContext';
 import { BookCategory } from '../types';
 import { lookupBookByIsbn } from '../utils/isbnLookup';
+import { resizeImageFileToCoverDataUrl } from '../utils/coverResolver';
 import { BookCover } from './BookCover';
 
 const CATEGORIES: BookCategory[] = [
@@ -41,6 +45,30 @@ export const NewBookModal: React.FC = () => {
 
   // Search state
   const [isSearchingIsbn, setIsSearchingIsbn] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUploadError(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const resizedDataUrl = await resizeImageFileToCoverDataUrl(file);
+      setCoverUrl(resizedDataUrl);
+    } catch (err: any) {
+      setUploadError(err.message || "Erreur lors du traitement de l'image.");
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setCoverUrl('');
+    setUploadError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const [searchStatus, setSearchStatus] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -101,28 +129,38 @@ export const NewBookModal: React.FC = () => {
     e.preventDefault();
     if (!titre.trim() || !auteur.trim()) return;
 
-    const res = addOuvrage(
-      {
-        titre: titre.trim(),
-        auteur: auteur.trim(),
-        isbn: isbn.trim() || `978-2${Math.floor(10000000 + Math.random() * 90000000)}`,
-        coverUrl: coverUrl.trim() || undefined,
-        sommaire: sommaire.trim() || undefined,
-        categorie,
-        cote: cote.trim() || 'GEN-001',
-        anneeEdition,
-        editeur: editeur.trim() || 'Édition Universitaire',
-        pagination,
-        resume: resume.trim() || 'Ouvrage académique.',
-        empruntable,
-        coverGradient: 'from-blue-900 to-slate-900'
-      },
-      nbExemplaires,
-      {
-        tiroir: tiroir.trim() || 'T1',
-        rangee: rangee.trim() || 'R1'
+    let res;
+    try {
+      res = addOuvrage(
+        {
+          titre: titre.trim(),
+          auteur: auteur.trim(),
+          isbn: isbn.trim() || `978-2${Math.floor(10000000 + Math.random() * 90000000)}`,
+          coverUrl: coverUrl.trim() || undefined,
+          sommaire: sommaire.trim() || undefined,
+          categorie,
+          cote: cote.trim() || 'GEN-001',
+          anneeEdition,
+          editeur: editeur.trim() || 'Édition Universitaire',
+          pagination,
+          resume: resume.trim() || 'Ouvrage académique.',
+          empruntable,
+          coverGradient: 'from-blue-900 to-slate-900'
+        },
+        nbExemplaires,
+        {
+          tiroir: tiroir.trim() || 'T1',
+          rangee: rangee.trim() || 'R1'
+        }
+      );
+    } catch (err: any) {
+      const isQuota = err?.name === 'QuotaExceededError' || err?.code === 22 || err?.message?.includes('quota');
+      if (isQuota) {
+        setUploadError("Photo trop lourde, choisissez une image plus petite");
+        return;
       }
-    );
+      throw err;
+    }
 
     setIsNewOuvrageOpen(false);
 
@@ -233,22 +271,34 @@ export const NewBookModal: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
             
             {/* Live Cover Preview */}
-            <div className="md:col-span-1 space-y-1.5 flex flex-col items-center">
+            <div className="md:col-span-1 space-y-2 flex flex-col items-center">
               <label className="font-bold text-slate-700 block text-[11px] text-center">
-                Aperçu de la Couverture
+                Aperçu Couverture
               </label>
-              <div className="w-28 sm:w-32">
+              <div className="w-28 sm:w-32 shadow-xs rounded-xl overflow-hidden">
                 <BookCover
                   titre={titre || "Titre de l'ouvrage"}
                   auteur={auteur || "Auteur"}
                   categorie={categorie}
                   coverUrl={coverUrl}
+                  isbn={isbn}
                   size="sm"
                 />
               </div>
               <span className="text-[10px] text-slate-400 text-center">
-                {coverUrl ? 'Image chargée' : 'Couverture générée'}
+                {coverUrl ? 'Image personnalisée' : 'Couverture garantie'}
               </span>
+
+              {coverUrl && (
+                <button
+                  type="button"
+                  onClick={handleRemovePhoto}
+                  className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Retirer la photo</span>
+                </button>
+              )}
             </div>
 
             {/* Editable Book Fields */}
@@ -278,18 +328,57 @@ export const NewBookModal: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1 flex items-center gap-1.5">
-                  <ImageIcon className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Adresse URL de l'image de couverture (coverUrl)</span>
-                </label>
-                <input
-                  type="url"
-                  value={coverUrl}
-                  onChange={(e) => setCoverUrl(e.target.value)}
-                  placeholder="https://covers.openlibrary.org/b/isbn/... ou lien direct"
-                  className="w-full p-2 border border-slate-200 rounded-lg font-mono text-[11px] text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-                />
+              {/* Téléverser une photo & Coller une URL */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-700 flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Image de couverture</span>
+                  </span>
+                  {uploadError && (
+                    <span className="text-xs font-semibold text-rose-600">
+                      {uploadError}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Option 1: Téléverser une photo (JPG, PNG) */}
+                  <div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/jpeg,image/png,image/jpg"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                      id="upload-cover-input"
+                    />
+                    <label
+                      htmlFor="upload-cover-input"
+                      className="w-full min-h-[38px] px-3 py-2 border border-slate-300 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition shadow-2xs"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Téléverser une photo</span>
+                    </label>
+                  </div>
+
+                  {/* Option 2: Coller une URL */}
+                  <div>
+                    <input
+                      type="url"
+                      value={coverUrl}
+                      onChange={(e) => {
+                        setCoverUrl(e.target.value);
+                        setUploadError(null);
+                      }}
+                      placeholder="Coller une URL d'image..."
+                      className="w-full h-[38px] px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono text-[11px] text-slate-700 bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Photo redimensionnée (max 400 px, JPEG). À défaut, couverture Open Library / Google Books ou couverture générée.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

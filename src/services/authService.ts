@@ -30,18 +30,16 @@ export const normalizeDomain = (domain: string): string => {
 
 /**
  * 1. Se connecter avec l'adresse e-mail académique
- * - Sans tenir compte des majuscules ni des espaces
- * - Domaine autorisé modifiable (ex: @usmba.ac.ma) : un e-mail d'un autre domaine est rejeté immédiatement
- * - Contrôle de la liste des adhérents :
- *   • e-mail inconnu : « Accès réservé aux étudiants inscrits à l'EST »
- *   • adhérent résilié ou abonnement expiré : « Votre inscription n'est plus active »
- *   • adhérent actif : accès accordé (seul le prénom et l'id sont mémorisés dans la session)
+ * - Accepte l'e-mail si son domaine est autorisé (comparaison sans tenir compte des majuscules ni des espaces).
+ * - Ne vérifie plus la présence dans la liste des adhérents pour la consultation du catalogue.
+ * - Domaine non autorisé : « Accès réservé aux adresses académiques @usmba.ac.ma » (ou le domaine configuré).
+ * - Si l'e-mail correspond à un adhérent importé, utilise son prénom ; sinon, utilise la partie de l'e-mail avant le @.
  */
 export const seConnecter = (
   rawEmail: string,
-  adherents: Adherent[],
+  adherents: Adherent[] = [],
   allowedDomain: string = '@usmba.ac.ma',
-  currentDate?: string
+  _currentDate?: string
 ): AuthResult => {
   const cleanEmail = rawEmail.trim().toLowerCase();
   const domain = normalizeDomain(allowedDomain);
@@ -57,42 +55,31 @@ export const seConnecter = (
   if (!cleanEmail.endsWith(domain)) {
     return {
       success: false,
-      error: `Adresse non autorisée : veuillez utiliser votre compte académique (${domain}).`
+      error: `Accès réservé aux adresses académiques ${domain}`
     };
   }
 
-  // Recherche dans la liste officielle des adhérents
+  // Détermination du prénom :
+  // Si l'e-mail correspond à un adhérent de la liste, affiche son prénom.
+  // Sinon, affiche la partie de l'e-mail avant le @.
   const matched = adherents.find(
     a => a.emailAcademique.trim().toLowerCase() === cleanEmail
   );
 
-  if (!matched) {
-    return {
-      success: false,
-      error: "Accès réservé aux étudiants inscrits à l'EST"
-    };
-  }
+  const localPart = cleanEmail.split('@')[0] || 'Étudiant';
+  const prenomToUse = matched ? matched.prenom : localPart;
+  const idToUse = matched ? matched.id : `adh_guest_${Date.now()}`;
 
-  // Vérification de validité de l'inscription
-  const now = currentDate || new Date().toISOString().split('T')[0];
-  const isExpired = matched.dateExpiration && matched.dateExpiration < now;
-
-  if (matched.statut !== 'actif' || isExpired) {
-    return {
-      success: false,
-      error: "Votre inscription n'est plus active"
-    };
-  }
-
-  // Connexion accordée : stockage du prénom et de l'id
   const connected: ConnectedStudent = {
-    id: matched.id,
-    prenom: matched.prenom,
+    id: idToUse,
+    prenom: prenomToUse,
     email: cleanEmail
   };
 
   try {
-    if (typeof localStorage !== 'undefined') { localStorage.setItem(STORAGE_KEY_STUDENT_SESSION, JSON.stringify(connected)); }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_STUDENT_SESSION, JSON.stringify(connected));
+    }
   } catch (err) {
     console.error("Erreur de sauvegarde de session:", err);
   }
@@ -108,7 +95,9 @@ export const seConnecter = (
  */
 export const seDeconnecter = (): void => {
   try {
-    if (typeof localStorage !== 'undefined') { localStorage.removeItem(STORAGE_KEY_STUDENT_SESSION); }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(STORAGE_KEY_STUDENT_SESSION);
+    }
   } catch (err) {
     console.error("Erreur de suppression de session:", err);
   }
@@ -116,14 +105,19 @@ export const seDeconnecter = (): void => {
 
 /**
  * 3. Lire l'étudiant connecté : renvoie les données de session ou null
+ * Les sessions déjà enregistrées dans le localStorage restent lisibles sans écran blanc.
  */
 export const lireEtudiantConnecte = (): ConnectedStudent | null => {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY_STUDENT_SESSION) : null;
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed.prenom === 'string' && typeof parsed.id === 'string') {
-      return parsed as ConnectedStudent;
+    if (parsed && typeof parsed.email === 'string') {
+      return {
+        id: typeof parsed.id === 'string' ? parsed.id : 'adh_saved',
+        prenom: typeof parsed.prenom === 'string' && parsed.prenom ? parsed.prenom : parsed.email.split('@')[0],
+        email: parsed.email
+      };
     }
     return null;
   } catch {

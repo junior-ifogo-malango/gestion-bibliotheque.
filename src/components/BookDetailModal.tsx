@@ -28,7 +28,8 @@ export const BookDetailModal: React.FC = () => {
     setScannedExemplaire, 
     addExemplairesToOuvrage,
     setActivePrintLabelsOuvrageId,
-    openNewLoan
+    openNewLoan,
+    updateOuvrage
   } = useLibrary();
 
   const [isAddingCopies, setIsAddingCopies] = useState(false);
@@ -72,12 +73,9 @@ export const BookDetailModal: React.FC = () => {
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
             <div className="w-24 sm:w-28 shrink-0 shadow-lg ring-2 ring-white/20 rounded-xl overflow-hidden">
               <BookCover
-                titre={selectedOuvrage.titre}
-                auteur={selectedOuvrage.auteur}
-                categorie={selectedOuvrage.categorie}
-                coverUrl={selectedOuvrage.coverUrl}
-                coverGradient={selectedOuvrage.coverGradient}
+                ouvrage={selectedOuvrage}
                 size="md"
+                onCacheCoverUrl={(url) => updateOuvrage(selectedOuvrage.id, { coverUrl: url })}
               />
             </div>
 

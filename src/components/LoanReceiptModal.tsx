@@ -86,11 +86,7 @@ export const LoanReceiptModal: React.FC = () => {
               {ouvrage && (
                 <div className="w-14 shrink-0 shadow-2xs">
                   <BookCover
-                    titre={ouvrage.titre}
-                    auteur={ouvrage.auteur}
-                    categorie={ouvrage.categorie}
-                    coverUrl={ouvrage.coverUrl}
-                    coverGradient={ouvrage.coverGradient}
+                    ouvrage={ouvrage}
                     size="sm"
                   />
                 </div>
